@@ -3,7 +3,7 @@
 
     memoryLeak is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
+    the Free Software Foundation; either version 3 of the License, or
     (at your option) any later version.
 
     memoryLeak is distributed in the hope that it will be useful,
@@ -57,6 +57,18 @@ print_version()
 }
 
 void
+print_help()
+{
+    printf("./memoryLeak -I interface -P port -s size -w directory [-c num]\n"
+           "\t-I - ip address of network interface, 0.0.0.0 for all\n"
+           "\t-P - port of service\n"
+           "\t-s - size in bytes of cache\n"
+           "\t-w - directory with files to serve\n"
+           "\t-c - number of worker threads, defaults to number of cores\n"
+        );
+}
+
+void
 handle_arguments(int argc, char **argv, struct _settings *settings,
                  int *param_count)
 {
@@ -91,6 +103,11 @@ handle_arguments(int argc, char **argv, struct _settings *settings,
 
             case 'v': // version
                 print_version();
+                (*param_count) = -100;
+                break;
+
+            case 'h': // help
+                print_help();
                 (*param_count) = -100;
                 break;
 
@@ -144,7 +161,7 @@ run(struct _settings *settings)
     int socket_fd;
 
     // create epoll for every worker
-    for(i = 0; i <= settings->workers_count; ++i) {
+    for(i = 0; i < settings->workers_count; ++i) {
         workers_epoll[i] = epoll_create(MAX_EVENTS);
     }
     printf("[+] Spawned worker threads\n");
@@ -186,7 +203,8 @@ main(int argc, char **argv)
     struct _settings settings;
     settings.port = settings.memsize = 0;
     settings.interface = settings.location = (char*) 0;
-    settings.workers_count = sysconf(_SC_NPROCESSORS_ONLN);
+    // get number of cores
+    settings.workers_count = sysconf(_SC_NPROCESSORS_ONLN); 
     int param_count = 0;
     
     // handle application parameters
