@@ -25,7 +25,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-
+#include <pthread.h>
 
 #define MAX_EVENTS  10
 #define QUEUE_SIZE  5
@@ -39,7 +39,7 @@ struct _settings
     uint workers_count; // how many workers should we spawn
 };
 
-int running = 1;
+volatile int running = 1;
 
 void
 print_version()
@@ -151,11 +151,20 @@ create_socket(struct _settings *settings, int *socket_fd)
     return 0;
 }
 
+void * 
+worker(void *epollfd)
+{
+    while(running);
+}
+
 void
 run(struct _settings *settings)
 {
     // array for epoll filedescriptors for every worker
     int *workers_epoll = malloc(sizeof(int) * settings->workers_count);
+    // array for workers threads
+    pthread_t *threads = malloc(sizeof(pthread_t) * settings->workers_count);
+
     int i;
     int rr_worker = 0; // round robin worker selector
     int socket_fd;
@@ -163,6 +172,8 @@ run(struct _settings *settings)
     // create epoll for every worker
     for(i = 0; i < settings->workers_count; ++i) {
         workers_epoll[i] = epoll_create(MAX_EVENTS);
+        pthread_create(threads + i, NULL, &worker,
+                       (void *) (workers_epoll + i));
     }
     printf("[+] Spawned worker threads\n");
 
@@ -173,7 +184,8 @@ run(struct _settings *settings)
         socklen_t n_tmp;
         n_tmp = sizeof(struct sockaddr);
 
-        while (running) {
+        // main loop
+        while (running) { // the flag should be changed async
             client_fd = accept(socket_fd, (struct sockaddr*) &client_addr,
                                &n_tmp);
             if (client_fd < 0) {
@@ -186,11 +198,14 @@ run(struct _settings *settings)
 
     } else {
         printf("[!] Aborting\n");
+        running = 0;
     }
 
     // close worker's epolls
-    for(i = 0; i <= settings->workers_count; ++i)
+    for(i = 0; i <= settings->workers_count; ++i) {
+        pthread_join(threads[i], NULL);
         close(workers_epoll[i]);
+    }
 
     free(workers_epoll);
     if (socket_fd > 0)
