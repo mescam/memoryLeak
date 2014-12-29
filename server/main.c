@@ -26,6 +26,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
 
 #define MAX_EVENTS  10
 #define QUEUE_SIZE  5
@@ -40,6 +43,13 @@ struct _settings
 };
 
 volatile int running = 1;
+
+void 
+signal_handler()
+{
+    printf("[!] Got interrupt/terminate signal!\n");
+    running = 0;
+}
 
 void
 print_version()
@@ -135,6 +145,7 @@ create_socket(struct _settings *settings, int *socket_fd)
         perror("[!] Error during creating socket");
         return 1;
     }
+    fcntl(*socket_fd, F_SETFL, O_NONBLOCK);
     setsockopt(*socket_fd, SOL_SOCKET, SO_REUSEADDR,
               (char*)&n_opt, sizeof(n_opt));
 
@@ -154,7 +165,22 @@ create_socket(struct _settings *settings, int *socket_fd)
 void * 
 worker(void *epollfd)
 {
-    while(running);
+    int fds, i, n;
+    struct epoll_event events[MAX_EVENTS];
+    char buffer[1024];
+    int fd = *((int*) epollfd);
+
+    while (running) {
+        fds = epoll_wait(fd, events, MAX_EVENTS, 10);
+        for (i = 0; i < fds; i++) {
+            n = read(events[i].data.fd, buffer, sizeof(buffer));
+            if (n == 0) {
+                close(events[i].data.fd);
+                printf("[-] Client disconnected\n");
+            }
+            write(events[i].data.fd, buffer, n);
+        }
+    }
 }
 
 void
@@ -168,46 +194,65 @@ run(struct _settings *settings)
     int i;
     int rr_worker = 0; // round robin worker selector
     int socket_fd;
+    int socket_epoll;
+
+    socket_epoll = epoll_create(MAX_EVENTS);
 
     // create epoll for every worker
-    for(i = 0; i < settings->workers_count; ++i) {
+    for (i = 0; i < settings->workers_count; ++i) {
         workers_epoll[i] = epoll_create(MAX_EVENTS);
         pthread_create(threads + i, NULL, &worker,
                        (void *) (workers_epoll + i));
     }
     printf("[+] Spawned worker threads\n");
 
-    if(!create_socket(settings, &socket_fd)) {
+    if (!create_socket(settings, &socket_fd)) {
         // accept!
         int client_fd;
         struct sockaddr_in client_addr;
         socklen_t n_tmp;
         n_tmp = sizeof(struct sockaddr);
+        struct epoll_event ev, events[MAX_EVENTS];
+        int fds;
 
+        // add listener to epoll
+        ev.events = EPOLLIN;
+        ev.data.fd = socket_fd;
+        epoll_ctl(socket_epoll, EPOLL_CTL_ADD, socket_fd, &ev);
+        
         // main loop
         while (running) { // the flag should be changed async
-            client_fd = accept(socket_fd, (struct sockaddr*) &client_addr,
-                               &n_tmp);
-            if (client_fd < 0) {
-                printf("[!] Error when accepting incoming connection\n");
+            // wait for connections on incoming socket
+            fds = epoll_wait(socket_epoll, events, MAX_EVENTS, 10);
+            // for every incoming connection
+            for (i = 0; i < fds; ++i) {
+                // accept it
+                client_fd = accept(socket_fd, (struct sockaddr*) &client_addr,
+                                   &n_tmp);
+                fcntl(client_fd, F_SETFL, O_NONBLOCK); // set as nonblocking
+                ev.events = EPOLLIN | EPOLLET;
+                ev.data.fd = client_fd;
+                // add to epoll of worker
+                epoll_ctl(workers_epoll[rr_worker],
+                          EPOLL_CTL_ADD, client_fd, &ev);
+                printf("[+] Incoming connection for worker %d\n", rr_worker+1);
+                // change worker
+                rr_worker = (rr_worker + 1) % settings->workers_count;
             }
-            printf("[+] Incoming connection for worker %d\n", rr_worker+1);
-
-            rr_worker = (rr_worker + 1) % settings->workers_count;
-        }
-
+        } // end of while
     } else {
         printf("[!] Aborting\n");
         running = 0;
     }
 
     // close worker's epolls
-    for(i = 0; i <= settings->workers_count; ++i) {
+    for (i = 0; i <= settings->workers_count; ++i) {
         pthread_join(threads[i], NULL);
         close(workers_epoll[i]);
     }
 
     free(workers_epoll);
+    close(socket_epoll);
     if (socket_fd > 0)
         close(socket_fd);
 }
@@ -221,7 +266,11 @@ main(int argc, char **argv)
     // get number of cores
     settings.workers_count = sysconf(_SC_NPROCESSORS_ONLN); 
     int param_count = 0;
-    
+
+    // handle signals
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+
     // handle application parameters
     handle_arguments(argc, argv, &settings, &param_count);
     
@@ -233,6 +282,7 @@ main(int argc, char **argv)
                settings.interface, settings.port, settings.memsize,
                settings.workers_count);
         run(&settings);
+        printf("[-] Going down...\n");
     } else if (param_count > 0) { // show warning
         printf("[!] Missing arguments\n");
     }
