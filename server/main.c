@@ -29,18 +29,8 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <sys/epoll.h>
-
-#define MAX_EVENTS  10
-#define QUEUE_SIZE  5
-
-struct _settings 
-{
-    char *interface; // address of interface
-    ushort port; // listening port
-    unsigned long long int memsize; // size of memory cache in bytes
-    char *location; // where are our files
-    uint workers_count; // how many workers should we spawn
-};
+#include "structs.h"
+#include "cache.h"
 
 volatile int running = 1;
 
@@ -86,28 +76,48 @@ handle_arguments(int argc, char **argv, struct _settings *settings,
     while ((c = getopt(argc, argv, "I:P:s:w:c:hv")) != -1) {
         switch (c) {
             case 'I': // interface
+                if (strlen(optarg) == 0) {
+                    printf("[!] Interface not specified\n");
+                    (*param_count) = -100;
+                }
                 settings->interface = malloc(strlen(optarg) * sizeof(char));
                 strcpy(settings->interface, optarg);
                 (*param_count)++;
                 break;
 
             case 'P': // port
+                if (strlen(optarg) == 0) {
+                    printf("[!] Port not specified\n");
+                    (*param_count) = -100;
+                }
                 settings->port = atoi(optarg);
                 (*param_count)++;
                 break;
 
             case 's': // size of memory cache
+                if (strlen(optarg) == 0) {
+                    printf("[!] Size not specified\n");
+                    (*param_count) = -100;
+                }
                 settings->memsize = atoi(optarg);
                 (*param_count)++;
                 break;
 
             case 'w': // directory with files to serve
+                if (strlen(optarg) == 0) {
+                    printf("[!] Location not specified\n");
+                    (*param_count) = -100;
+                }
                 settings->location = malloc(strlen(optarg) * sizeof(char));
                 strcpy(settings->location, optarg);
                 (*param_count)++;
                 break;
 
             case 'c': // workers count
+                if (strlen(optarg) == 0) {
+                    printf("[!] Workers count not specified\n");
+                    (*param_count) = -100;
+                }
                 settings->workers_count = atoi(optarg);
                 break;
 
@@ -171,16 +181,25 @@ worker(void *epollfd)
     int fd = *((int*) epollfd);
 
     while (running) {
+        // wait for event from my clients
         fds = epoll_wait(fd, events, MAX_EVENTS, 10);
         for (i = 0; i < fds; i++) {
+            // the request is limited to max 1024 characters
             n = read(events[i].data.fd, buffer, sizeof(buffer));
+            // let the magic begin!
             if (n == 0) {
+                // close socket, it'll be automagically removed from epoll
                 close(events[i].data.fd);
                 printf("[-] Client disconnected\n");
+            } else {
+                write(events[i].data.fd, buffer, n); // echo server lol
+                cache_handle_request(events[i].data.fd, buffer);
             }
-            write(events[i].data.fd, buffer, n);
+            
         }
     }
+
+    return NULL;
 }
 
 void
@@ -281,6 +300,7 @@ main(int argc, char **argv)
                "of %lld bytes and %d workers\n",
                settings.interface, settings.port, settings.memsize,
                settings.workers_count);
+        set_cache_size(settings.memsize);
         run(&settings);
         printf("[-] Going down...\n");
     } else if (param_count > 0) { // show warning
