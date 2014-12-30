@@ -192,7 +192,6 @@ worker(void *epollfd)
                 close(events[i].data.fd);
                 printf("[-] Client disconnected\n");
             } else {
-                write(events[i].data.fd, buffer, n); // echo server lol
                 cache_handle_request(events[i].data.fd, buffer);
             }
             
@@ -292,6 +291,10 @@ main(int argc, char **argv)
 
     // handle application parameters
     handle_arguments(argc, argv, &settings, &param_count);
+    if (chdir(settings.location)) {
+        printf("[!] Cannot change CWD to %s\n", settings.location);
+        param_count = -100;
+    }
     
     if (param_count == 4) { // all arguments specified, run application
         printf("[+] memoryLeak starting up!\n");
@@ -301,6 +304,7 @@ main(int argc, char **argv)
                settings.interface, settings.port, settings.memsize,
                settings.workers_count);
         set_cache_size(settings.memsize);
+        set_storage_location(settings.location);
         run(&settings);
         printf("[-] Going down...\n");
     } else if (param_count > 0) { // show warning

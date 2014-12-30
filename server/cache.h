@@ -25,4 +25,7 @@ cache_handle_request(int fd, char buffer[1024]);
 void
 set_cache_size(unsigned long long int size);
 
+void
+set_storage_location(char *l);
+
 #endif
