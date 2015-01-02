@@ -134,6 +134,7 @@ handle_arguments(int argc, char **argv, struct _settings *settings,
             default:
                 printf("[!] Unrecognized argument %c!\n", c);
         }
+                
     }
 }
 
@@ -304,7 +305,6 @@ main(int argc, char **argv)
                settings.interface, settings.port, settings.memsize,
                settings.workers_count);
         set_cache_size(settings.memsize);
-        set_storage_location(settings.location);
         run(&settings);
         printf("[-] Going down...\n");
     } else if (param_count > 0) { // show warning

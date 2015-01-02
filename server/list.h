@@ -15,29 +15,20 @@
     along with memoryLeak; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-#ifndef STRUCTS_H
-#define STRUCTS_H
-#include <sys/types.h>
-#include "stdint.h"
-#define MAX_EVENTS  10
-#define QUEUE_SIZE  5
 
+#ifndef LIST_H
+#define LIST_H
 
-struct _settings 
+struct _list_el 
 {
-    char *interface; // address of interface
-    ushort port; // listening port
-    unsigned long long int memsize; // size of memory cache in bytes
-    char *location; // where are our files
-    uint workers_count; // how many workers should we spawn
+    void *el;
+    struct _list_el *prev, *next;
 };
 
-struct _cache_el
-{
-    void *addr;
-    unsigned long long int size;
-    char filename[1024];
-    unsigned int mtime;
-    unsigned int usage;
-};
+void
+list_insert(struct _list_el **list, void *el);
+
+void
+list_delete(struct _list_el **list);
+
 #endif

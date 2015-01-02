@@ -15,29 +15,39 @@
     along with memoryLeak; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-#ifndef STRUCTS_H
-#define STRUCTS_H
-#include <sys/types.h>
-#include "stdint.h"
-#define MAX_EVENTS  10
-#define QUEUE_SIZE  5
+#include <stdlib.h>
+#include "list.h"
 
-
-struct _settings 
+void
+list_insert(struct _list_el **list, void *el)
 {
-    char *interface; // address of interface
-    ushort port; // listening port
-    unsigned long long int memsize; // size of memory cache in bytes
-    char *location; // where are our files
-    uint workers_count; // how many workers should we spawn
-};
+    struct _list_el *e = malloc(sizeof(struct _list_el));
+    e->el = el;
+    if (*list == NULL) {
+        e->prev = e;
+        e->next = e;
+        *list = e;
+    } else {
+        e->prev = *list;
+        e->next = (*list)->next;
+        (*list)->next->prev = e;
+        (*list)->next = e;
+    }
+}
 
-struct _cache_el
+void
+list_delete(struct _list_el **list)
 {
-    void *addr;
-    unsigned long long int size;
-    char filename[1024];
-    unsigned int mtime;
-    unsigned int usage;
-};
-#endif
+    if (*list == NULL) {
+        return;
+    } else if ((*list)->next == *list) {
+        free(*list);
+        *list = NULL;
+    } else {
+        struct _list_el *tmp = *list;
+        tmp->prev->next = tmp->next;
+        tmp->next->prev = tmp->prev;
+        (*list) = tmp->next;
+        free(tmp);
+    }
+}
