@@ -306,6 +306,7 @@ main(int argc, char **argv)
                settings.workers_count);
         set_cache_size(settings.memsize);
         run(&settings);
+        cache_delete_all();
         printf("[-] Going down...\n");
     } else if (param_count > 0) { // show warning
         printf("[!] Missing arguments\n");

@@ -23,14 +23,15 @@
 #include <unistd.h>
 #include <string.h>
 #include "cache.h"
+#include <pthread.h>
+#include <assert.h>
 #include "structs.h"
 #include "list.h"
-#include <pthread.h>
+
 
 static unsigned long long int max_mem;
 static unsigned long long int mem_size;
 pthread_rwlock_t cache_lock;
-pthread_mutex_t conv_lock;
 static struct _list_el *cache;
 
 struct _cache_el *
@@ -182,6 +183,14 @@ set_cache_size(unsigned long long int size)
     mem_size = 0;
     max_mem = size;
     pthread_rwlock_init(&cache_lock, NULL);
-    pthread_mutex_init(&conv_lock, NULL);
     cache = NULL;
+}
+
+void
+cache_delete_all()
+{
+    mem_size += max_mem;
+    cache_free_memory();
+    pthread_rwlock_destroy(&cache_lock);
+    assert(cache == NULL);
 }
