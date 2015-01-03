@@ -80,10 +80,21 @@ cache_read_write(int fd, char filename[1024], unsigned long long int size)
     }
 }
 
-void cache_free_memory(unsigned long long int amount)
+void cache_free_memory()
 {
-    while(amount > max_mem) {
-        
+    printf("[!] Need to alocate %db memory\n", mem_size - max_mem);
+    while(mem_size > max_mem) {
+        printf("[?] Cache points to: %p, mem: %d, max: %d\n", cache, mem_size, max_mem);
+        while (((struct _cache_el*) cache->el)->usage != 0) {
+            ((struct _cache_el*) cache->el)->usage -= 1;
+            cache = cache->next;
+        }
+        struct _cache_el *el = (struct _cache_el*) cache->el;
+        munmap(el->addr, el->size);
+        printf("[!] Freed %d bytes by removing %s\n", el->size, el->filename);
+        mem_size -= el->size;
+        free(el);
+        list_delete(&cache);
     }
 }
 
@@ -92,21 +103,25 @@ cache_retrieve_file(int fd, char filename[1024], struct stat *file_stat)
 {
     if (file_stat->st_size > max_mem) {
         // file is too big, need buffered read
+        printf("[!] File too big\n");
         cache_read_write(fd, filename, file_stat->st_size);
     } else {
         // checking cache
+        printf("[!] Checking cache\n");
         pthread_rwlock_rdlock(&cache_lock); // lock cache for reading
         struct _cache_el *e = cache_find(filename);
         if (e == NULL) {
             // no file in cache
+            printf("[!] Cache miss\n");
             pthread_rwlock_unlock(&cache_lock);
             pthread_rwlock_wrlock(&cache_lock);
             // double check if file is still missing
             e = cache_find(filename);
             if (e == NULL) { // still nope
-                if (mem_size + file_stat->st_size > max_mem) { 
+                mem_size += file_stat->st_size;
+                if (mem_size > max_mem) { 
                     // need to free memory
-                    cache_free_memory(mem_size + file_stat->st_size);
+                    cache_free_memory();
                 }
                 // create new cache element
                 e = malloc(sizeof(struct _cache_el));
@@ -115,10 +130,9 @@ cache_retrieve_file(int fd, char filename[1024], struct stat *file_stat)
                 strncpy(e->filename, filename, 1024);
                 e->mtime = file_stat->st_mtim.tv_sec;
                 e->usage = 1;
-                // update memory usage
-                mem_size += file_stat->st_size;
                 // insert to cache
                 list_insert(&cache, e);
+                printf("[+] Added file to cache\n");
             }
             write(fd, e->addr, file_stat->st_size);
             pthread_rwlock_unlock(&cache_lock);
@@ -128,6 +142,7 @@ cache_retrieve_file(int fd, char filename[1024], struct stat *file_stat)
             // refresh file
             // TODO
         }
+        printf("[!] Cache hit!\n");
         write(fd, e->addr, file_stat->st_size);
         pthread_rwlock_unlock(&cache_lock);
         //void *file = cache_from_memory(filename, file_stat);
@@ -156,6 +171,7 @@ cache_handle_request(int fd, char buffer[1024])
     if (strcmp(cmd, "GET") == 0) {
         char filename[1024];
         sscanf(buffer + 4, "%1023s", filename);
+        printf("[!] Requested %s\n", filename);
         cache_get_request(fd, filename);
     }
 }
