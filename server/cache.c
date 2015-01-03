@@ -189,8 +189,13 @@ set_cache_size(unsigned long long int size)
 void
 cache_delete_all()
 {
-    mem_size += max_mem;
-    cache_free_memory();
+    while (cache != NULL) {
+        struct _cache_el *el = (struct _cache_el*) cache->el;
+        munmap(el->addr, el->size);
+        mem_size -= el->size;
+        free(el);
+        list_delete(&cache);
+    }
     pthread_rwlock_destroy(&cache_lock);
     assert(cache == NULL);
 }
