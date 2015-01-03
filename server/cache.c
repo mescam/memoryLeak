@@ -83,16 +83,16 @@ cache_read_write(int fd, char filename[1024], unsigned long long int size)
 
 void cache_free_memory()
 {
-    printf("[!] Need to alocate %db memory\n", mem_size - max_mem);
+    printf("[!] Need to alocate %llub memory\n", mem_size - max_mem);
     while(mem_size > max_mem) {
-        printf("[?] Cache points to: %p, mem: %d, max: %d\n", cache, mem_size, max_mem);
+        printf("[?] Cache points to: %p, mem: %llu, max: %llu\n", cache, mem_size, max_mem);
         while (((struct _cache_el*) cache->el)->usage != 0) {
             ((struct _cache_el*) cache->el)->usage -= 1;
             cache = cache->next;
         }
         struct _cache_el *el = (struct _cache_el*) cache->el;
         munmap(el->addr, el->size);
-        printf("[!] Freed %d bytes by removing %s\n", el->size, el->filename);
+        printf("[!] Freed %llu bytes by removing %s\n", el->size, el->filename);
         mem_size -= el->size;
         free(el);
         list_delete(&cache);
