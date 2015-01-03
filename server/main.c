@@ -265,7 +265,7 @@ run(struct _settings *settings)
     }
 
     // close worker's epolls
-    for (i = 0; i <= settings->workers_count; ++i) {
+    for (i = 0; i < settings->workers_count; ++i) {
         pthread_join(threads[i], NULL);
         close(workers_epoll[i]);
     }
