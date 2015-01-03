@@ -16,18 +16,21 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/stat.h> 
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <string.h>
 #include "cache.h"
+#include "structs.h"
 #include "list.h"
 #include <pthread.h>
 
 static unsigned long long int max_mem;
 static unsigned long long int mem_size;
 pthread_rwlock_t cache_lock;
+pthread_mutex_t conv_lock;
 static struct _list_el *cache;
 
 struct _cache_el *
@@ -49,9 +52,8 @@ cache_find(char filename[1024])
 }
 
 
-
 void *
-cache_from_memory(char filename[1024], struct stat *file_stat)
+cache_load_memory(char filename[1024], struct stat *file_stat)
 {
     int fd = open(filename, O_RDONLY);
     void *addr;
@@ -78,6 +80,13 @@ cache_read_write(int fd, char filename[1024], unsigned long long int size)
     }
 }
 
+void cache_free_memory(unsigned long long int amount)
+{
+    while(amount > max_mem) {
+        
+    }
+}
+
 void
 cache_retrieve_file(int fd, char filename[1024], struct stat *file_stat)
 {
@@ -85,8 +94,43 @@ cache_retrieve_file(int fd, char filename[1024], struct stat *file_stat)
         // file is too big, need buffered read
         cache_read_write(fd, filename, file_stat->st_size);
     } else {
-        void *file = cache_from_memory(filename, file_stat);
-        write(fd, file, file_stat->st_size);
+        // checking cache
+        pthread_rwlock_rdlock(&cache_lock); // lock cache for reading
+        struct _cache_el *e = cache_find(filename);
+        if (e == NULL) {
+            // no file in cache
+            pthread_rwlock_unlock(&cache_lock);
+            pthread_rwlock_wrlock(&cache_lock);
+            // double check if file is still missing
+            e = cache_find(filename);
+            if (e == NULL) { // still nope
+                if (mem_size + file_stat->st_size > max_mem) { 
+                    // need to free memory
+                    cache_free_memory(mem_size + file_stat->st_size);
+                }
+                // create new cache element
+                e = malloc(sizeof(struct _cache_el));
+                e->addr = cache_load_memory(filename, file_stat);
+                e->size = file_stat->st_size;
+                strncpy(e->filename, filename, 1024);
+                e->mtime = file_stat->st_mtim.tv_sec;
+                e->usage = 1;
+                // update memory usage
+                mem_size += file_stat->st_size;
+                // insert to cache
+                list_insert(&cache, e);
+            }
+            write(fd, e->addr, file_stat->st_size);
+            pthread_rwlock_unlock(&cache_lock);
+            return;
+        }
+        if (e->mtime < file_stat->st_mtim.tv_sec) {
+            // refresh file
+            // TODO
+        }
+        write(fd, e->addr, file_stat->st_size);
+        pthread_rwlock_unlock(&cache_lock);
+        //void *file = cache_from_memory(filename, file_stat);
     }
 }
 
@@ -122,5 +166,6 @@ set_cache_size(unsigned long long int size)
     mem_size = 0;
     max_mem = size;
     pthread_rwlock_init(&cache_lock, NULL);
+    pthread_mutex_init(&conv_lock, NULL);
     cache = NULL;
 }
