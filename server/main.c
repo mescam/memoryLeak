@@ -289,6 +289,7 @@ main(int argc, char **argv)
     // handle signals
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    signal(SIGPIPE, SIG_IGN);
 
     // handle application parameters
     handle_arguments(argc, argv, &settings, &param_count);
